@@ -2,11 +2,13 @@ import express from "express";
 import cors from "cors";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
+import dns from "dns";
 import { Server } from "socket.io";
 import http from "http";
 import Message from "./models/Message.js";
 import User from "./models/User.js";
 
+dns.setDefaultResultOrder("ipv4first");
 dotenv.config();
 
 const app = express();
@@ -24,15 +26,15 @@ let onlineUsers = {};
 const PORT = process.env.PORT || 5000;
 
 mongoose
-  .connect(process.env.MONGO_URI)
+  .connect(process.env.MONGO_URI, {
+    serverSelectionTimeoutMS: 10000,
+  })
   .then(() => console.log("MongoDB Connected"))
   .catch((err) => console.log("Mongo Error:", err.message));
 
 server.listen(PORT, () => console.log("Server running on", PORT));
 
 io.on("connection", (socket) => {
-  console.log("Socket connected:", socket.id);
-
   socket.on("join", (userId) => {
     if (!userId) return;
     socket.join(userId);
@@ -57,14 +59,6 @@ io.on("connection", (socket) => {
     } catch (err) {
       console.log("Message Error:", err.message);
     }
-  });
-
-  socket.on("typing", ({ sender, receiver }) => {
-    if (receiver) io.to(receiver).emit("typing", sender);
-  });
-
-  socket.on("stopTyping", ({ sender, receiver }) => {
-    if (receiver) io.to(receiver).emit("stopTyping", sender);
   });
 
   socket.on("disconnect", () => {
