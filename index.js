@@ -2,43 +2,61 @@ import express from "express";
 import cors from "cors";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
-import dns from "dns";
-import { Server } from "socket.io";
 import http from "http";
+import { Server } from "socket.io";
+
 import Message from "./models/Message.js";
 import User from "./models/User.js";
 
-dns.setDefaultResultOrder("ipv4first");
 dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
 
-const io = new Server(server, {
-  cors: { origin: "*" },
-});
+app.use(cors({
+  origin: "*",
+  methods: ["GET", "POST"],
+  credentials: true
+}));
 
-app.use(cors());
 app.use(express.json());
+
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
+});
 
 let onlineUsers = {};
 
-const PORT = process.env.PORT || 5000;
+const connectDB = async () => {
+  try {
+    await mongoose.connect(process.env.MONGO_URI, {
+      serverSelectionTimeoutMS: 10000,
+    });
 
-mongoose
-  .connect(process.env.MONGO_URI, {
-    serverSelectionTimeoutMS: 10000,
-  })
-  .then(() => console.log("MongoDB Connected"))
-  .catch((err) => console.log("Mongo Error:", err.message));
+    const PORT = process.env.PORT || 5000;
 
-server.listen(PORT, () => console.log("Server running on", PORT));
+    server.listen(PORT, () => {
+      console.log("Server running on", PORT);
+    });
+
+  } catch (err) {
+    console.log("Mongo Error ❌:", err.message);
+    process.exit(1);
+  }
+};
+
+connectDB();
 
 io.on("connection", (socket) => {
   socket.on("join", (userId) => {
     if (!userId) return;
+
     socket.join(userId);
     onlineUsers[userId] = socket.id;
+
     io.emit("onlineUsers", Object.keys(onlineUsers));
   });
 
@@ -56,9 +74,18 @@ io.on("connection", (socket) => {
 
       io.to(data.receiver).emit("receiveMessage", msg);
       io.to(data.sender).emit("receiveMessage", msg);
+
     } catch (err) {
-      console.log("Message Error:", err.message);
+      console.log(err.message);
     }
+  });
+
+  socket.on("typing", ({ sender, receiver }) => {
+    if (receiver) io.to(receiver).emit("typing", sender);
+  });
+
+  socket.on("stopTyping", ({ sender, receiver }) => {
+    if (receiver) io.to(receiver).emit("stopTyping", sender);
   });
 
   socket.on("disconnect", () => {
@@ -68,22 +95,22 @@ io.on("connection", (socket) => {
         break;
       }
     }
+
     io.emit("onlineUsers", Object.keys(onlineUsers));
   });
 });
 
 app.get("/messages/:user1/:user2", async (req, res) => {
   try {
-    const { user1, user2 } = req.params;
-
     const messages = await Message.find({
       $or: [
-        { sender: user1, receiver: user2 },
-        { sender: user2, receiver: user1 },
+        { sender: req.params.user1, receiver: req.params.user2 },
+        { sender: req.params.user2, receiver: req.params.user1 },
       ],
     }).sort({ createdAt: 1 });
 
     res.json(messages);
+
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -96,6 +123,7 @@ app.get("/users/:username", async (req, res) => {
     }).select("-password");
 
     res.json(users);
+
   } catch {
     res.status(500).json([]);
   }
@@ -104,6 +132,10 @@ app.get("/users/:username", async (req, res) => {
 app.post("/follow", async (req, res) => {
   try {
     const { currentUser, targetUser } = req.body;
+
+    if (!currentUser || !targetUser) {
+      return res.status(400).json({ message: "Missing data" });
+    }
 
     await User.updateOne(
       { username: currentUser },
@@ -115,7 +147,8 @@ app.post("/follow", async (req, res) => {
       { $addToSet: { followers: currentUser } }
     );
 
-    res.json({ message: "done" });
+    res.json({ message: "Followed successfully" });
+
   } catch {
     res.status(500).json({ message: "error" });
   }
