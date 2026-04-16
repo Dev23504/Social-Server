@@ -25,16 +25,10 @@ const PORT = process.env.PORT || 5000;
 
 mongoose
   .connect(process.env.MONGO_URI)
-  .then(() => {
-    console.log("MongoDB Connected");
-  })
-  .catch((err) => {
-    console.log("Mongo Error:", err);
-  });
+  .then(() => console.log("MongoDB Connected"))
+  .catch((err) => console.log("Mongo Error:", err.message));
 
-server.listen(PORT, () => {
-  console.log("Server running on", PORT);
-});
+server.listen(PORT, () => console.log("Server running on", PORT));
 
 io.on("connection", (socket) => {
   console.log("Socket connected:", socket.id);
@@ -61,16 +55,16 @@ io.on("connection", (socket) => {
       io.to(data.receiver).emit("receiveMessage", msg);
       io.to(data.sender).emit("receiveMessage", msg);
     } catch (err) {
-      console.log("Message Error:", err);
+      console.log("Message Error:", err.message);
     }
   });
 
   socket.on("typing", ({ sender, receiver }) => {
-    io.to(receiver).emit("typing", sender);
+    if (receiver) io.to(receiver).emit("typing", sender);
   });
 
   socket.on("stopTyping", ({ sender, receiver }) => {
-    io.to(receiver).emit("stopTyping", sender);
+    if (receiver) io.to(receiver).emit("stopTyping", sender);
   });
 
   socket.on("disconnect", () => {
@@ -97,7 +91,7 @@ app.get("/messages/:user1/:user2", async (req, res) => {
 
     res.json(messages);
   } catch (err) {
-    res.status(500).json({ error: "error" });
+    res.status(500).json({ error: err.message });
   }
 });
 
