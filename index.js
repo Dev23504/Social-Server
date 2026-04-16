@@ -28,7 +28,9 @@ mongoose
   .then(() => {
     console.log("MongoDB Connected");
   })
-  .catch((err) => console.log("Mongo Error:", err));
+  .catch((err) => {
+    console.log("Mongo Error:", err);
+  });
 
 server.listen(PORT, () => {
   console.log("Server running on", PORT);
@@ -59,8 +61,16 @@ io.on("connection", (socket) => {
       io.to(data.receiver).emit("receiveMessage", msg);
       io.to(data.sender).emit("receiveMessage", msg);
     } catch (err) {
-      console.log("SendMessage Error:", err);
+      console.log("Message Error:", err);
     }
+  });
+
+  socket.on("typing", ({ sender, receiver }) => {
+    io.to(receiver).emit("typing", sender);
+  });
+
+  socket.on("stopTyping", ({ sender, receiver }) => {
+    io.to(receiver).emit("stopTyping", sender);
   });
 
   socket.on("disconnect", () => {
@@ -72,4 +82,53 @@ io.on("connection", (socket) => {
     }
     io.emit("onlineUsers", Object.keys(onlineUsers));
   });
+});
+
+app.get("/messages/:user1/:user2", async (req, res) => {
+  try {
+    const { user1, user2 } = req.params;
+
+    const messages = await Message.find({
+      $or: [
+        { sender: user1, receiver: user2 },
+        { sender: user2, receiver: user1 },
+      ],
+    }).sort({ createdAt: 1 });
+
+    res.json(messages);
+  } catch (err) {
+    res.status(500).json({ error: "error" });
+  }
+});
+
+app.get("/users/:username", async (req, res) => {
+  try {
+    const users = await User.find({
+      username: { $ne: req.params.username },
+    }).select("-password");
+
+    res.json(users);
+  } catch {
+    res.status(500).json([]);
+  }
+});
+
+app.post("/follow", async (req, res) => {
+  try {
+    const { currentUser, targetUser } = req.body;
+
+    await User.updateOne(
+      { username: currentUser },
+      { $addToSet: { following: targetUser } }
+    );
+
+    await User.updateOne(
+      { username: targetUser },
+      { $addToSet: { followers: currentUser } }
+    );
+
+    res.json({ message: "done" });
+  } catch {
+    res.status(500).json({ message: "error" });
+  }
 });
