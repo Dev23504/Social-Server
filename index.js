@@ -25,8 +25,10 @@ const PORT = process.env.PORT || 5000;
 
 mongoose
   .connect(process.env.MONGO_URI)
-  .then(() => console.log("MongoDB Connected"))
-  .catch((err) => console.log(err));
+  .then(() => {
+    console.log("MongoDB Connected");
+  })
+  .catch((err) => console.log("Mongo Error:", err));
 
 server.listen(PORT, () => {
   console.log("Server running on", PORT);
@@ -36,6 +38,7 @@ io.on("connection", (socket) => {
   console.log("Socket connected:", socket.id);
 
   socket.on("join", (userId) => {
+    if (!userId) return;
     socket.join(userId);
     onlineUsers[userId] = socket.id;
     io.emit("onlineUsers", Object.keys(onlineUsers));
@@ -43,6 +46,8 @@ io.on("connection", (socket) => {
 
   socket.on("sendMessage", async (data) => {
     try {
+      if (!data.sender || !data.receiver) return;
+
       const msg = await Message.create({
         sender: data.sender,
         receiver: data.receiver,
@@ -54,7 +59,7 @@ io.on("connection", (socket) => {
       io.to(data.receiver).emit("receiveMessage", msg);
       io.to(data.sender).emit("receiveMessage", msg);
     } catch (err) {
-      console.log("Message Error:", err);
+      console.log("SendMessage Error:", err);
     }
   });
 
